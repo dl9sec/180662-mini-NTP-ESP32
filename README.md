@@ -1,8 +1,8 @@
 # 180662 mini NTP for the M5Stack Core
 
-| Startup                                                                                                              | Elektor mini NTP running                                                                                                      |
-|----------------------------------------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------------|
-| <img src="pictures/M5Stack_Startup.jpg" alt="M5Stack Modules (GPS and RTC)" width="25%" height="25%" class="center"> | <img src="pictures/M5Stack_Elektor_mini_NTP.jpg" alt="M5Stack Modules (GPS and RTC)" width="25%" height="25%" class="center"> |
+| Startup                                                                                               | Elektor mini NTP running                                                                                       |
+|-------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| <img src="pictures/M5Stack_Startup.jpg" alt="M5Stack Modules (GPS and RTC)" width="50%" height="50%"> | <img src="pictures/M5Stack_Elektor_mini_NTP.jpg" alt="M5Stack Modules (GPS and RTC)" width="25%" height="25%"> |
 
 License: GPL3.0-or-later
 ###### 
