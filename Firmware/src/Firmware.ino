@@ -1,5 +1,5 @@
 /*
-    This file is part of Firmware for Elektorproject 180662.
+    This file is part of Firmware for Elektorproject 180662 ported for the M5Stack-Core-ESP32.
 
     Firmware for Elektorproject 180662 is free software: you can redistribute it and/or modify
     it under the terms of the GNU General Public License as published by
@@ -13,30 +13,36 @@
 
     You should have received a copy of the GNU General Public License
     along with Firmware for Elektorproject 180662.  If not, see <https://www.gnu.org/licenses/>.
-
 */
 
 
 /* 
  * Hardware used: 
  * 
- *  ESP32 based module from Elektor ( https://www.elektor.com/wemos-lolin-esp32-oled-module-with-wifi )
- *  GPS Receiver ( https://www.elektor.com/open-smart-gps-serial-gps-module-for-arduino-apm2-5-flight-control )
- *  DS3231 bases I²C RTC Module, e.g those used for the Pi
+ *  M5Stack Core BASIC SKU:K001 ( https://docs.m5stack.com/en/core/basic )
+ *  M5Stack Module GPS SKU:M003 (https://docs.m5stack.com/en/module/gps )
+ *  M5Stack Module PROTO SKU:M001 ( https://docs.m5stack.com/en/module/proto ) with DS3231 baseed I²C RTC Module, e.g those used for the Pi
  * 
  *  License used: GPLv3 
  *
  *
- * Librarys requierd:
+ * Libraries requierd:
  *  
- *  U8G2 by oliver
+ *  M5Stack by M5Stack ( https://docs.m5stack.com/en/quick_start/m5core/arduino ) 
  *  Time by Michael Magolis
  *  TinyGPS++ ( https://github.com/mikalhart/TinyGPSPlus )  
  *  RTCLib by Adafruit
  *  ArduinoJson 6.10.0
  *  CRC32 by Christopher Baker
  *  
- * *  Version 1.6
+ *  Version 1.6 (M5Stack-port)
+ *  - Ported the project to a M5Stack Core
+ *  - Replaced the OLED displays by virtual displays on the M5Stack TFT, DisplayTask reworked
+ *  - Inserted M5Stack compatibility stuff
+ *  - Added FreeFonts
+ *  - Minor changes for better configurability
+ *  
+ *  Version 1.6
  *  - Fixed NULL pointer used for a function call
  *  - Moved project to Platform.IO
  *  - Dependencies handeled by PlatformIO
@@ -69,7 +75,7 @@
  *  
  */
  
-
+#include <M5Stack.h>
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <esp_wifi.h>
@@ -82,9 +88,6 @@
 #include <TinyGPS++.h>
 #include <RTClib.h>
 
-#include <U8g2lib.h>
-
-
 #include "ArduinoJson.h"
 #include "timecore.h"
 #include "datastore.h"
@@ -92,9 +95,12 @@
 #include "ntp_server.h"
 #include "network.h"
 
+#include "compat_M5.h"    // Include some compatibility stuff for the M5Stack
+
 #define  GPSBAUD ( 9600 )
 
 #define MAX_SRV_CLIENTS ( 5 )
+
 
 /* For GPS Module Debug */
 WiFiServer TelnetServer(23);
@@ -105,27 +111,13 @@ Timecore timec;
 hw_timer_t * timer = NULL;
 uint32_t millisec;
 
-
-
-
-
-
 RTC_DS3231 rtc_clock;
 //RTC_DS1307 rtc_clock;
 
-HardwareSerial hws(1);
+HardwareSerial hws(MODCORE_HWS);
 Ticker TimeKeeper;
 TinyGPSPlus gps;
 NTP_Server NTPServer;
-
-//U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_left(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
-//U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_right(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
-
-/* As we use a pointer to the oled we need to make sure it's the same type as out displays */
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_left(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ 4, /* data=*/ 5);
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_right(U8G2_R0, /* reset=*/ U8X8_PIN_NONE, /* clock=*/ 4, /* data=*/ 5);
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C* oled_ptr=NULL;
-
 
 /* 63 Char max and 17 missign for the mac */
 TaskHandle_t GPSTaskHandle;
@@ -133,7 +125,7 @@ SemaphoreHandle_t xSemaphore = NULL;
 SemaphoreHandle_t xi2cmtx = NULL;
 
 //Used for the PPS interrupt 
-const byte interruptPin = 25;
+const byte interruptPin = MODGPS_PPS;
 
 
 volatile uint32_t UptimeCounter=0;
@@ -208,6 +200,21 @@ uint32_t GetSubsecond( void ){
  **************************************************************************************************/
 void setup()
 {
+  M5.begin();
+  M5.Power.begin();
+  M5.Lcd.setBrightness(100);
+
+  // Draw the bezels of the lrft and right virtual OLED
+  M5.Lcd.drawRoundRect( 12,VIRTOLED_VOFF-8,144, 80,  4, TFT_DARKGREY);  // Virtual oled_left
+  M5.Lcd.drawRoundRect(164,VIRTOLED_VOFF-8,144, 80,  4, TFT_DARKGREY);  // Virtual oled_right
+
+  // Caption of the M5Stack Button C
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.setFreeFont(FM9);
+  M5.Lcd.setTextColor(TFT_RED);
+  M5.Lcd.setCursor(228,229);
+  M5.Lcd.print("RESET");
+  
   /* First we setup the serial console with 115k2 8N1 */
   Serial.begin (115200);
   /* The next is to initilaize the datastore, here the eeprom emulation */
@@ -237,10 +244,13 @@ void setup()
    * This delay the boot for a few seconds and will erase all config
    * if the boot btn is pressed 
    */
+
+  // Native button use
+  pinMode(BTN_USER, INPUT);
    
   Serial.println(F("Booting..."));
   for(uint32_t i=0;i<25;i++){
-    if(digitalRead( 0 ) == false){
+    if(digitalRead(BTN_USER) == false){ // M5Stack Button C
         Serial.println(F("Erase EEPROM"));
         erase_eeprom();  
         break;
@@ -248,6 +258,17 @@ void setup()
       vTaskDelay( 100 / portTICK_PERIOD_MS ); 
     }
   }
+
+  // Caption of the M5Stack Button C
+  M5.Lcd.setTextSize(1);
+  M5.Lcd.setFreeFont(FM9);
+  M5.Lcd.setTextColor(TFT_BLACK);
+  M5.Lcd.setCursor(228,229);
+  M5.Lcd.print("RESET");
+  M5.Lcd.setTextColor(TFT_WHITE);
+  M5.Lcd.setCursor(233,229);
+  M5.Lcd.print("SWAP");
+  
   /* We start to cpnfigure the WiFi */
   Serial.println(F("Init WiFi"));     
   initWiFi();
@@ -260,7 +281,7 @@ void setup()
   TelnetServer.setNoDelay(true);
   gps_config = read_gps_config();
   /* We reassign the I2C Pins to 4 and 5 with 100kHz */
-  Wire.begin(5,4,100000);
+  Wire.begin(21,22,100000);
 
 
   /* This will check if the RTC is on the I2C */
@@ -303,7 +324,7 @@ void setup()
   pinMode(interruptPin, INPUT_PULLUP);
   attachInterrupt(digitalPinToInterrupt(interruptPin), handlePPSInterrupt, RISING);
  
-  hws.begin( GPSBAUD ,SERIAL_8N1,13,15); // 13->RX , 15->TX
+  hws.begin( GPSBAUD ,SERIAL_8N1,MODCORE_RX,MODCORE_TX); // 16->RX , 17->TX
   /* We will drain the RX buffer to avoid having old data in it*/
   if (hws.available() > 0) {
                 byte incomingByte = hws.read();
@@ -550,7 +571,15 @@ void loop()
   }
 }
 
-
+// DisplayTask reworked for M5Stack:
+// Copyright (c) 2021 by Thorsten Godau DL9SEC (https://github.com/dl9sec)
+//
+// The hardware I2C-OLED displays are replaced by two tiny litle 128x64 virtual displays on the M5Stack TFT.
+// The virtual display can be swaped by pressing the M5Stack Button C (right one).
+// Because the M5 graphics subsystem has no "sendBuffer()" method, the display writing is done inside the
+// particulat timed semaphore sections.
+// This is just a dumb port of the OLED functionality to the M5Stack TFT without optimization or so.
+// 
 void Display_Task( void* param ){
   char timestr[9]={0,};
   char loc_timestr[9]={0,};
@@ -558,112 +587,112 @@ void Display_Task( void* param ){
   char gps_lng_str[16]={0,};
   char datestr[16]={0,};
   char loc_datestr[16]={0,};
-  bool btn_pressed = digitalRead( 0 );
-
+  bool btn_pressed = digitalRead(BTN_USER);
 
   display_settings_t displayconfig = read_display_config();
   
-  //oled_left.setI2CAddress(0x78);
-  //oled_right.setI2CAddress(0x7A);
-  oled_ptr= &oled_left;
-  oled_ptr->setI2CAddress(0x7A);
-  oled_ptr->begin();
-  oled_ptr= &oled_right;
-  oled_ptr->setI2CAddress(0x78);
-  oled_ptr->begin();
- 
   /* Display boot splsh to the oled */
   if(displayconfig.swap_display == true ){
-    oled_ptr= &oled_right;
+    // UTC clock on the left, TZ clock on the right
+    u16virtOLED_TZ_offset  = VIRTOLED_R_HOFF;
+    u16virtOLED_UTC_offset = VIRTOLED_L_HOFF;
   } else {
-    oled_ptr= &oled_left;
+    // TZ clock on the left, UTC clock on the right
+    u16virtOLED_TZ_offset  = VIRTOLED_L_HOFF;
+    u16virtOLED_UTC_offset = VIRTOLED_R_HOFF;
   }
   
-  oled_ptr->setFont(u8g2_font_open_iconic_all_8x_t);
-  oled_ptr->drawGlyph(0,64,247);
-  oled_ptr->setFont(u8g2_font_inb16_mf); 
-  oled_ptr->drawStr(58,16,"Setup");
-  oled_ptr->drawStr(70,48,"WiFi");
-
   if( true == xSemaphoreTake(xi2cmtx,(500 / portTICK_PERIOD_MS) ) ){
-         oled_ptr->sendBuffer();     
+        // Display content on the virtual OLED
+        M5.Lcd.setTextColor(TFT_CYAN);
+        M5.Lcd.drawXBitmap(  0 + u16virtOLED_UTC_offset, 64 - glyph_open_iconic_247_8x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_247_8x_t, glyph_open_iconic_247_8x_t_Width, glyph_open_iconic_247_8x_t_Height, TFT_CYAN);
+        M5.Lcd.setFreeFont(FSB12); M5.Lcd.setTextSize(1);
+        M5.Lcd.setCursor(58 + u16virtOLED_UTC_offset, 16 + VIRTOLED_VOFF); M5.Lcd.print("Setup");
+        M5.Lcd.setCursor(70 + u16virtOLED_UTC_offset, 48 + VIRTOLED_VOFF); M5.Lcd.print("WiFi");
+              
         xSemaphoreGive(xi2cmtx);
   }
 
   /* Display boot splsh to the oled */
   if(displayconfig.swap_display == false ){
-    oled_ptr= &oled_right;
+    // TZ clock on the left, UTC clock on the right
+    u16virtOLED_TZ_offset  = VIRTOLED_L_HOFF;
+    u16virtOLED_UTC_offset = VIRTOLED_R_HOFF;
   } else {
-    oled_ptr= &oled_left;
+    // UTC clock on the left, TZ clock on the right
+    u16virtOLED_TZ_offset  = VIRTOLED_R_HOFF;
+    u16virtOLED_UTC_offset = VIRTOLED_L_HOFF;    
   }
-  oled_ptr->clearBuffer(); 
-  oled_ptr->setFont(u8g2_font_open_iconic_all_8x_t);
-  oled_ptr->drawGlyph(32,64,269);
 
   if( true == xSemaphoreTake(xi2cmtx,(500 / portTICK_PERIOD_MS) ) ){
-        oled_ptr->sendBuffer();     
+        // Display content on the virtual OLED
+        M5.Lcd.setTextColor(TFT_CYAN);
+        M5.Lcd.drawXBitmap(  32 + u16virtOLED_TZ_offset, 64 - glyph_open_iconic_269_8x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_269_8x_t, glyph_open_iconic_269_8x_t_Width, glyph_open_iconic_269_8x_t_Height, TFT_CYAN);
+             
         xSemaphoreGive(xi2cmtx);
   }
 
- 
-
-  
   /* clear the screen and draw the time */
   while(1==1){
-    if( (digitalRead( 0 ) == false) && ( true == btn_pressed ) ) {
+    if( (digitalRead(BTN_USER) == false) && ( true == btn_pressed ) ) {
       //Btn is pressed if last time we had a true than we swap display
       displayconfig = read_display_config();
       displayconfig.swap_display = !displayconfig.swap_display;
       write_display_config( displayconfig);
       btn_pressed = false;
     } else {
-      btn_pressed = digitalRead( 0 );
+      btn_pressed = digitalRead(BTN_USER);
     }
     
     if( xSemaphoreTake( xSemaphore, portMAX_DELAY  ) == pdTRUE )
     {
       displayconfig = read_display_config();
       if(displayconfig.swap_display == true ){
-        oled_ptr= &oled_right;
+        // UTC clock on the left, TZ clock on the right
+        u16virtOLED_TZ_offset  = VIRTOLED_R_HOFF;
+        u16virtOLED_UTC_offset = VIRTOLED_L_HOFF;
       } else {
-        oled_ptr= &oled_left;
+        // TZ clock on the left, UTC clock on the right
+        u16virtOLED_TZ_offset  = VIRTOLED_L_HOFF;
+        u16virtOLED_UTC_offset = VIRTOLED_R_HOFF;
       }
-      oled_ptr->clearBuffer();
-      oled_ptr->setFont(u8g2_font_amstrad_cpc_extended_8f );
-      oled_ptr->drawStr(0,8,"NTP Server ");
-      oled_ptr->drawStr(0,16,WiFi.localIP().toString().c_str());
-      /* Determine if we are AP or STA */
-      wifi_mode_t op_mode;
-      if(ESP_OK == esp_wifi_get_mode( &op_mode) ){
-        if(WIFI_MODE_STA == op_mode){
-          oled_ptr->setFont(u8g2_font_open_iconic_all_1x_t);
-          oled_ptr->drawGlyph(120,8,247);
-          
-        } else {
-          oled_ptr->setFont(u8g2_font_open_iconic_all_1x_t);
-          oled_ptr->drawGlyph(120,8,125);
-          
-        }
-      } else {
-        /* Error collecting WiFi Mode */
-          oled_ptr->setFont(u8g2_font_open_iconic_all_1x_t);
-          oled_ptr->drawGlyph(120,8,121);
-      }
-      oled_ptr->setFont(u8g2_font_inb16_mn ); 
-      datum_t utc_time = timec.ConvertToDatum(timec.GetUTC());
-      snprintf(timestr, sizeof(timestr),"%02d:%02d:%02d",utc_time.hour,utc_time.minute,utc_time.second);
-      oled_ptr->drawStr(8,42,timestr);
-      oled_ptr->setFont(u8g2_font_amstrad_cpc_extended_8f );
-      snprintf(datestr, sizeof(datestr),"%04d-%02d-%02d GMT",utc_time.year,utc_time.month,utc_time.day);
-      oled_ptr->drawStr(16,58,datestr);
-      oled_ptr->setFont(u8g2_font_open_iconic_all_1x_t);
-      if(true==pps_active){
-        oled_ptr->drawGlyph(0,58,197);
-      } else {
-        oled_ptr->drawGlyph(0,58,123);
-      }
+
       if( true == xSemaphoreTake(xi2cmtx,(100 / portTICK_PERIOD_MS) ) ){    
-        oled_ptr->sendBuffer();
+        // Display content on the virtual OLED
+        clearVirtOLED(displayconfig.swap_display);
+        
+        M5.Lcd.setTextColor(TFT_YELLOW); M5.Lcd.setTextFont(1); M5.Lcd.setTextSize(1);
+        M5.Lcd.setCursor(0 + u16virtOLED_UTC_offset,  8 + VIRTOLED_VOFF - M5.Lcd.fontHeight(1)); M5.Lcd.print("NTP Server");
+        M5.Lcd.setCursor(0 + u16virtOLED_UTC_offset, 16 + VIRTOLED_VOFF - M5.Lcd.fontHeight(1)); M5.Lcd.print(WiFi.localIP().toString().c_str());        
+
+        /* Determine if we are AP or STA */
+        wifi_mode_t op_mode;
+        if(ESP_OK == esp_wifi_get_mode( &op_mode) ){
+          if(WIFI_MODE_STA == op_mode){
+            M5.Lcd.drawXBitmap(120 + u16virtOLED_UTC_offset, 8 - glyph_open_iconic_247_1x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_247_1x_t, glyph_open_iconic_247_1x_t_Width, glyph_open_iconic_247_1x_t_Height, TFT_YELLOW);
+          } else {
+            M5.Lcd.drawXBitmap(120 + u16virtOLED_UTC_offset, 8 - glyph_open_iconic_125_1x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_125_1x_t, glyph_open_iconic_125_1x_t_Width, glyph_open_iconic_125_1x_t_Height, TFT_YELLOW);
+          }
+        } else {
+          /* Error collecting WiFi Mode */
+            M5.Lcd.drawXBitmap(120 + u16virtOLED_UTC_offset, 8 - glyph_open_iconic_121_1x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_121_1x_t, glyph_open_iconic_121_1x_t_Width, glyph_open_iconic_121_1x_t_Height, TFT_RED);
+        }
+
+        datum_t utc_time = timec.ConvertToDatum(timec.GetUTC());
+        snprintf(timestr, sizeof(timestr),"%02d:%02d:%02d",utc_time.hour,utc_time.minute,utc_time.second);
+        M5.Lcd.setTextColor(TFT_CYAN); M5.Lcd.setFreeFont(FMB12); M5.Lcd.setTextSize(1);
+        M5.Lcd.setCursor(8 + u16virtOLED_UTC_offset,  42 + VIRTOLED_VOFF); M5.Lcd.print(timestr);
+        
+        snprintf(datestr, sizeof(datestr),"%04d-%02d-%02d UTC",utc_time.year,utc_time.month,utc_time.day);
+        M5.Lcd.setTextColor(TFT_CYAN); M5.Lcd.setTextFont(1); M5.Lcd.setTextSize(1);
+        M5.Lcd.setCursor(16 + u16virtOLED_UTC_offset,  58 + VIRTOLED_VOFF - M5.Lcd.fontHeight(1)); M5.Lcd.print(datestr);
+
+        if(true==pps_active){
+          M5.Lcd.drawXBitmap(0 + u16virtOLED_UTC_offset, 58 - glyph_open_iconic_197_1x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_197_1x_t, glyph_open_iconic_197_1x_t_Width, glyph_open_iconic_197_1x_t_Height, TFT_CYAN);
+        } else {
+          M5.Lcd.drawXBitmap(0 + u16virtOLED_UTC_offset, 58 - glyph_open_iconic_123_1x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_123_1x_t, glyph_open_iconic_123_1x_t_Width, glyph_open_iconic_123_1x_t_Height, TFT_CYAN);
+        }
+        
         xSemaphoreGive(xi2cmtx);
       }
 
@@ -671,52 +700,55 @@ void Display_Task( void* param ){
       /* on the other side we draw the gps location if we have one and also the local time */
       /* Display boot splsh to the oled */
       if(displayconfig.swap_display == false ){
-        oled_ptr= &oled_right;
+        // TZ clock on the left, UTC clock on the right
+        u16virtOLED_TZ_offset  = VIRTOLED_L_HOFF;
+        u16virtOLED_UTC_offset = VIRTOLED_R_HOFF;
       } else {
-        oled_ptr= &oled_left;
-      }
-      oled_ptr->clearBuffer();
-      if (true ==  gps.location.isValid() ){
-        oled_ptr->setFont(u8g2_font_amstrad_cpc_extended_8f );
-        snprintf(gps_lng_str,sizeof(gps_lng_str),"Lng: %0.6f",gps.location.lng());
-        snprintf(gps_lat_str,sizeof(gps_lat_str),"Lat: %0.6f",gps.location.lat());
-        oled_ptr->drawStr(0,8,gps_lat_str);
-        oled_ptr->drawStr(0,16,gps_lng_str);
-        oled_ptr->setFont(u8g2_font_open_iconic_all_2x_t);
-        oled_ptr->drawGlyph(112,16,209);
-      } else {
-         oled_ptr->setFont(u8g2_font_amstrad_cpc_extended_8f );
-         oled_ptr->drawStr(24,16,"No GPS Fix");
-      }
-    
-      
-      oled_ptr->setFont(u8g2_font_inb16_mn ); 
-      datum_t loc_time = timec.GetLocalTimeDate();
-      snprintf(loc_timestr, sizeof(loc_timestr),"%02d:%02d:%02d",loc_time.hour,loc_time.minute,loc_time.second);
-      oled_ptr->drawStr(8,42,loc_timestr);
-      oled_ptr->setFont(u8g2_font_amstrad_cpc_extended_8f );
-      snprintf(loc_datestr, sizeof(loc_datestr),"%04d-%02d-%02d",loc_time.year,loc_time.month,loc_time.day);
-      oled_ptr->drawStr(16,58,loc_datestr);
-      oled_ptr->setFont(u8g2_font_open_iconic_all_1x_t);
-      oled_ptr->drawGlyph(104,58,184);
-      oled_ptr->setFont(u8g2_font_open_iconic_all_1x_t);
-      if(true==pps_active){
-        oled_ptr->drawGlyph(0,58,197);
-      } else {
-        oled_ptr->drawGlyph(0,58,123);
+        // TZ clock on the left, UTC clock on the right
+        u16virtOLED_TZ_offset  = VIRTOLED_R_HOFF;
+        u16virtOLED_UTC_offset = VIRTOLED_L_HOFF;
       }
       
       if( true == xSemaphoreTake(xi2cmtx,(100 / portTICK_PERIOD_MS) ) ){
-       
-        oled_ptr->sendBuffer();
+        // Display content on the virtual OLED
+        clearVirtOLED(!displayconfig.swap_display);
+        
+        if (true ==  gps.location.isValid() ){
+          snprintf(gps_lat_str,sizeof(gps_lat_str),"Lat: %0.6f",gps.location.lat());
+          snprintf(gps_lng_str,sizeof(gps_lng_str),"Lon: %0.6f",gps.location.lng());
+          
+          M5.Lcd.setTextColor(TFT_YELLOW); M5.Lcd.setTextFont(1); M5.Lcd.setTextSize(1);
+          M5.Lcd.setCursor(0 + u16virtOLED_TZ_offset,  8 + VIRTOLED_VOFF - M5.Lcd.fontHeight(1)); M5.Lcd.print(gps_lat_str);
+          M5.Lcd.setCursor(0 + u16virtOLED_TZ_offset, 16 + VIRTOLED_VOFF - M5.Lcd.fontHeight(1)); M5.Lcd.print(gps_lng_str);
+                  
+          M5.Lcd.drawXBitmap(112 + u16virtOLED_TZ_offset, 16 - glyph_open_iconic_209_2x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_209_2x_t, glyph_open_iconic_209_2x_t_Width, glyph_open_iconic_209_2x_t_Height, TFT_YELLOW);
+        } else {
+ 
+          M5.Lcd.setTextColor(TFT_YELLOW); M5.Lcd.setTextFont(1); M5.Lcd.setTextSize(1);
+          M5.Lcd.setCursor(24 + u16virtOLED_TZ_offset,  16 + VIRTOLED_VOFF - M5.Lcd.fontHeight(1)); M5.Lcd.print("No GPS Fix");
+        }
+      
+        datum_t loc_time = timec.GetLocalTimeDate();
+        snprintf(loc_timestr, sizeof(loc_timestr),"%02d:%02d:%02d",loc_time.hour,loc_time.minute,loc_time.second);
+        M5.Lcd.setTextColor(TFT_CYAN); M5.Lcd.setFreeFont(FMB12); M5.Lcd.setTextSize(1);
+        M5.Lcd.setCursor(8 + u16virtOLED_TZ_offset,  42 + VIRTOLED_VOFF); M5.Lcd.print(loc_timestr);        
+
+        snprintf(loc_datestr, sizeof(loc_datestr),"%04d-%02d-%02d",loc_time.year,loc_time.month,loc_time.day);
+        M5.Lcd.setTextColor(TFT_CYAN); M5.Lcd.setTextFont(1); M5.Lcd.setTextSize(1);
+        M5.Lcd.setCursor(16 + u16virtOLED_TZ_offset,  58 + VIRTOLED_VOFF - M5.Lcd.fontHeight(1)); M5.Lcd.print(loc_datestr);
+        
+        M5.Lcd.drawXBitmap(104 + u16virtOLED_TZ_offset, 58 - glyph_open_iconic_184_1x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_184_1x_t, glyph_open_iconic_184_1x_t_Width, glyph_open_iconic_184_1x_t_Height, TFT_CYAN);
+
+        if(true==pps_active){
+          M5.Lcd.drawXBitmap(0 + u16virtOLED_TZ_offset, 58 - glyph_open_iconic_197_1x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_197_1x_t, glyph_open_iconic_197_1x_t_Width, glyph_open_iconic_197_1x_t_Height, TFT_CYAN);
+        } else {
+          M5.Lcd.drawXBitmap(0 + u16virtOLED_TZ_offset, 58 - glyph_open_iconic_123_1x_t_Height + VIRTOLED_VOFF, glyph_open_iconic_123_1x_t, glyph_open_iconic_123_1x_t_Width, glyph_open_iconic_123_1x_t_Height, TFT_CYAN);
+        }
+        
         xSemaphoreGive(xi2cmtx);
       }
-
-
-      
+  
     }
-    
-
       
   }
   

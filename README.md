@@ -1,6 +1,10 @@
-# 180662 mini NTP with ESP32
+# 180662 mini NTP for the M5Stack Core
 
-License: GPLv3
+| Startup                                                                                               | Elektor mini NTP running                                                                                       |
+|-------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
+| <img src="pictures/M5Stack_Startup.jpg" alt="M5Stack Modules (GPS and RTC)" width="17%" height="17%"> | <img src="pictures/M5Stack_Elektor_mini_NTP.jpg" alt="M5Stack Modules (GPS and RTC)" width="17%" height="17%"> |
+
+License: GPL3.0-or-later
 ###### 
 
     Firmware for Elektorproject 180662 is free software: you can redistribute it and/or modify
@@ -17,14 +21,18 @@ License: GPLv3
 
 #
 
-Code for the GPS based NTP with ESP32. This software uses a Wemos LoLin ESP32 OLED as base.
-The OLED used is a SSD1307 based one attached to the i²C Bus. This board can be purchased 
-at ( https://www.elektor.com/wemos-lolin-esp32-oled-module-with-wifi ). As GPS receiver this one is used in the build ( https://www.elektor.com/open-smart-gps-serial-gps-module-for-arduino-apm2-5-flight-control )
+Code for the GPS based NTP for the M5Stack Core.
+Quick and dirty port  for a M5Stack system (just replaced the OLEDs by two virtual displays on the M5Stacks integrated TFT, no improvments/optimizations):
+*  M5Stack Core BASIC SKU:K001 ( https://docs.m5stack.com/en/core/basic )
+*  M5Stack Module GPS SKU:M003 (https://docs.m5stack.com/en/module/gps )
+*  M5Stack Module PROTO SKU:M001 ( https://docs.m5stack.com/en/module/proto ) with DS3231 based I²C RTC Module, e.g those used for the Pi
+
+<img src="pictures/M5Stack_Modules.jpg" alt="M5Stack Modules (GPS and RTC)" width="17%" height="17%">
 
 ## Software 
 
 The software is written using the arduino framwork for the ESP32. Also you need to compile the code following libraries to be present:
- *  U8G2 by oliver
+ *  M5Stack by M5Stack ( https://docs.m5stack.com/en/quick_start/m5core/arduino ) 
  *  Time by Michael Magolis
  *  Ticker by Bert Melis
  *  TinyGPS++ ( https://github.com/mikalhart/TinyGPSPlus )  
@@ -32,23 +40,29 @@ The software is written using the arduino framwork for the ESP32. Also you need 
  *  ArduinoJson 6.10.0
  *  CRC32 by Christopher Baker
 
- Compile and upload the code to your ESP32. Also upload the webpages.
+ Compile and upload the code to your **"M5Stack-Core-ESP32"**. Also upload the webpages from the "data" directoty with ["ESP32 Sketch Data Upload"](https://github.com/me-no-dev/arduino-esp32fs-plugin).
 
  ### GPIO Mapping
- For the GPIOs used these are not the arduino default ones, as they needed to be modified for the OLED. The following pins are used:
+ The following pins are used:
 
-## I²C:
+## Button (Factory defaults/Swap displays):
 | GPIO PIN  | Function  |
 |-----------|-----------|
-|  GPIO04   |  SCL      |
-|  GPIO05   |  SDA      |
-|           |           |
+|  GPIO37   | Button C  |
 
-## GPS:
+## RTC (I²C):
+| GPIO PIN  | Function  |
+|-----------|-----------|
+|  GPIO22   |  SCL      |
+|  GPIO21   |  SDA      |
+
+(Remark: the two pull-up resistors on the DS3231 board were removed)
+
+## GPS (UART):
 | GPIO PIN  | Function      |
 |-----------|---------------|
-| GPIO13    | UART RX       |
-| GPIO15    | UART TX       |
-| GPIO25    | PPS Interrupt |
+| GPIO16    | UART RX       |
+| GPIO17    | UART TX       |
+| GPIO34    | PPS Interrupt |
 
 For more inforamtion have a look at: https://www.elektormagazine.com/labs/mini-ntp-server-with-gps
