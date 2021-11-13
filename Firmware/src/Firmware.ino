@@ -281,7 +281,7 @@ void setup()
   TelnetServer.setNoDelay(true);
   gps_config = read_gps_config();
   /* We reassign the I2C Pins to 4 and 5 with 100kHz */
-  Wire.begin(21,22,100000);
+  Wire.begin(-1,21,22,100000);
 
 
   /* This will check if the RTC is on the I2C */
