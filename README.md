@@ -2,7 +2,7 @@
 
 | Startup                                                                                               | Elektor mini NTP running                                                                                       |
 |-------------------------------------------------------------------------------------------------------|----------------------------------------------------------------------------------------------------------------|
-| <img src="pictures/M5Stack_Startup.jpg" alt="M5Stack Modules (GPS and RTC)" width="50%" height="50%"> | <img src="pictures/M5Stack_Elektor_mini_NTP.jpg" alt="M5Stack Modules (GPS and RTC)" width="25%" height="25%"> |
+| <img src="pictures/M5Stack_Startup.jpg" alt="M5Stack Modules (GPS and RTC)" width="50%" height="50%"> | <img src="pictures/M5Stack_Elektor_mini_NTP.jpg" alt="M5Stack Modules (GPS and RTC)" width="50%" height="50%"> |
 
 License: GPL3.0-or-later
 ###### 
@@ -27,7 +27,7 @@ Quick and dirty port  for a M5Stack system (just replaced the OLEDs by two virtu
 *  M5Stack Module GPS SKU:M003 (https://docs.m5stack.com/en/module/gps )
 *  M5Stack Module PROTO SKU:M001 ( https://docs.m5stack.com/en/module/proto ) with DS3231 based I²C RTC Module, e.g those used for the Pi
 
-<img src="pictures/M5Stack_Modules.jpg" alt="M5Stack Modules (GPS and RTC)" width="25%" height="25%">
+<img src="pictures/M5Stack_Modules.jpg" alt="M5Stack Modules (GPS and RTC)" width="50%" height="50%">
 
 ## Software 
 
